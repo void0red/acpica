@@ -601,6 +601,7 @@ AcpiPsGetNextSimpleArg (
     UINT16                  Opcode;
     UINT8                   *Aml = ParserState->Aml;
     UINT32                  Remaining = (UINT32) ACPI_PTR_DIFF (ParserState->AmlEnd, Aml);
+    UINT64                  PartialValue;
 
 
     ACPI_FUNCTION_TRACE_U32 (PsGetNextSimpleArg, ArgType);
@@ -638,16 +639,13 @@ AcpiPsGetNextSimpleArg (
         else
         {
             Arg->Common.Value.Integer = 0;
+            Length = 0;
             if (Remaining > 0)
             {
-                UINT64 Tmp = 0;
-                memcpy (&Tmp, Aml, Remaining);
-                Arg->Common.Value.Integer = Tmp;
+                PartialValue = 0;
+                memcpy (&PartialValue, Aml, Remaining);
+                Arg->Common.Value.Integer = PartialValue;
                 Length = Remaining;
-            }
-            else
-            {
-                Length = 0;
             }
         }
         break;
@@ -665,16 +663,13 @@ AcpiPsGetNextSimpleArg (
         else
         {
             Arg->Common.Value.Integer = 0;
+            Length = 0;
             if (Remaining > 0)
             {
-                UINT64 Tmp = 0;
-                memcpy (&Tmp, Aml, Remaining);
-                Arg->Common.Value.Integer = Tmp;
+                PartialValue = 0;
+                memcpy (&PartialValue, Aml, Remaining);
+                Arg->Common.Value.Integer = PartialValue;
                 Length = Remaining;
-            }
-            else
-            {
-                Length = 0;
             }
         }
         break;
@@ -692,16 +687,13 @@ AcpiPsGetNextSimpleArg (
         else
         {
             Arg->Common.Value.Integer = 0;
+            Length = 0;
             if (Remaining > 0)
             {
-                UINT64 Tmp = 0;
-                memcpy (&Tmp, Aml, Remaining);
-                Arg->Common.Value.Integer = Tmp;
+                PartialValue = 0;
+                memcpy (&PartialValue, Aml, Remaining);
+                Arg->Common.Value.Integer = PartialValue;
                 Length = Remaining;
-            }
-            else
-            {
-                Length = 0;
             }
         }
         break;
@@ -727,8 +719,20 @@ AcpiPsGetNextSimpleArg (
         }
         else
         {
-            /* No terminator found within bounds; clamp to Remaining */
-            Length = Remaining;
+            /*
+             * No terminator found - add null at buffer boundary
+             * and report a warning
+             */
+            ACPI_WARNING ((AE_INFO,
+                "Invalid AML string: no null terminator, truncating at offset %u",
+                (UINT32) (Aml - ParserState->Aml)));
+
+            /* Add null terminator at the boundary */
+            if (Remaining > 0)
+            {
+                Aml[Remaining - 1] = 0;
+                Length = Remaining;
+            }
         }
         break;
 
