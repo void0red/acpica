@@ -365,6 +365,7 @@ AcpiDmResourceTemplate (
     UINT32                  CurrentByteOffset;
     UINT8                   ResourceType;
     UINT32                  ResourceLength;
+    UINT32                  DescriptorLength;
     void                    *Aml;
     UINT32                  Level;
     BOOLEAN                 DependentFns = FALSE;
@@ -405,9 +406,23 @@ AcpiDmResourceTemplate (
             return;
         }
 
+        /*
+         * Validate that the descriptor length does not exceed the available
+         * buffer size. This prevents buffer overflows from malformed AML.
+         * Note: DescriptorLength already includes ResourceLength.
+         */
+        DescriptorLength = AcpiUtGetDescriptorLength (Aml);
+        if ((CurrentByteOffset + DescriptorLength) > ByteCount)
+        {
+            AcpiOsPrintf (
+                "/*** Resource descriptor length %u exceeds available data %u at offset %u ***/\n",
+                DescriptorLength, ByteCount - CurrentByteOffset, CurrentByteOffset);
+            return;
+        }
+
         /* Point to next descriptor */
 
-        CurrentByteOffset += AcpiUtGetDescriptorLength (Aml);
+        CurrentByteOffset += DescriptorLength;
 
         /* Descriptor pre-processing */
 
