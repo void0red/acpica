@@ -1061,7 +1061,7 @@ AcpiDmDisassembleOneOp (
             AcpiOsPrintf ("\n");
 
             Aml = Child->Named.Data;
-            Length = (UINT32) Child->Common.Value.Integer;
+            Length = Child->Named.Length;
 
             Info->Level += 1;
             Info->MappingOp = Op;
