@@ -614,33 +614,20 @@ AcpiDsInitObjectFromOp (
         ObjDesc->String.Pointer = Op->Common.Value.String;
 
         /*
-         * Validate string pointer is within AML buffer bounds
-         * to prevent heap-buffer-overflow
+         * Calculate string length with bounds checking to prevent
+         * heap-buffer-overflow when string is not null-terminated
+         * within the AML buffer
          */
-        if (WalkState && WalkState->ParserState.AmlStart &&
-            WalkState->ParserState.AmlEnd)
         {
-            UINT8 *StringPtr = (UINT8 *) Op->Common.Value.String;
+            UINT8 *Aml = (UINT8 *) Op->Common.Value.String;
             UINT8 *AmlEnd = WalkState->ParserState.AmlEnd;
-            UINT32 MaxLength;
-            UINT32 i;
+            UINT32 Length = 0;
 
-            if (StringPtr >= AmlEnd)
+            while ((Aml + Length) < AmlEnd && Aml[Length] != 0)
             {
-                return_ACPI_STATUS (AE_AML_BAD_OPCODE);
+                Length++;
             }
-
-            /* Limit string length to remaining AML buffer */
-            MaxLength = (UINT32) (AmlEnd - StringPtr);
-            for (i = 0; i < MaxLength && StringPtr[i] != 0; i++)
-            {
-                /* Scan for null terminator */
-            }
-            ObjDesc->String.Length = i;
-        }
-        else
-        {
-            ObjDesc->String.Length = (UINT32) strlen (Op->Common.Value.String);
+            ObjDesc->String.Length = Length;
         }
 
         /*
