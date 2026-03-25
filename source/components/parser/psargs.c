@@ -313,14 +313,26 @@ AcpiPsGetNextNamestring (
 {
     UINT8                   *Start = ParserState->Aml;
     UINT8                   *End = ParserState->Aml;
+    UINT8                   *AmlEnd;
 
 
     ACPI_FUNCTION_TRACE (PsGetNextNamestring);
 
 
+    /*
+     * ParserState->AmlEnd may be expanded by malformed package lengths.
+     * Never decode a namestring beyond the original AML buffer.
+     */
+    AmlEnd = ParserState->AmlEnd;
+    if (AmlEnd > ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize))
+    {
+        AmlEnd = ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize);
+    }
+
+
     /* Point past any namestring prefix characters (backslash or carat) */
 
-    while ((End < ParserState->AmlEnd) &&
+    while ((End < AmlEnd) &&
            (ACPI_IS_ROOT_PREFIX (*End) ||
             ACPI_IS_PARENT_PREFIX (*End)))
     {
@@ -329,7 +341,7 @@ AcpiPsGetNextNamestring (
 
     /* Check for buffer overflow before dereferencing */
 
-    if (End >= ParserState->AmlEnd)
+    if (End >= AmlEnd)
     {
         ParserState->Aml = ParserState->AmlEnd;
         return_PTR (NULL);
@@ -361,6 +373,12 @@ AcpiPsGetNextNamestring (
 
         /* Multiple name segments, 4 chars each, count in next byte */
 
+        if ((End + 1) >= AmlEnd)
+        {
+            ParserState->Aml = ParserState->AmlEnd;
+            return_PTR (NULL);
+        }
+
         End += 2 + (*(End + 1) * ACPI_NAMESEG_SIZE);
         break;
 
@@ -374,7 +392,7 @@ AcpiPsGetNextNamestring (
 
     /* Check for buffer overflow */
 
-    if (End > ParserState->AmlEnd)
+    if (End > AmlEnd)
     {
         ParserState->Aml = ParserState->AmlEnd;
         return_PTR (NULL);
@@ -419,9 +437,17 @@ AcpiPsGetNextNamepath (
     ACPI_OPERAND_OBJECT     *MethodDesc;
     ACPI_NAMESPACE_NODE     *Node;
     UINT8                   *Start = ParserState->Aml;
+    UINT8                   *AmlEnd;
 
 
     ACPI_FUNCTION_TRACE (PsGetNextNamepath);
+
+
+    AmlEnd = ParserState->AmlEnd;
+    if (AmlEnd > ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize))
+    {
+        AmlEnd = ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize);
+    }
 
 
     Path = AcpiPsGetNextNamestring (ParserState);
@@ -432,10 +458,10 @@ AcpiPsGetNextNamepath (
     if (!Path)
     {
         /*
-         * If Aml did not advance, the NULL path indicates an error
-         * (buffer overflow), not a valid Null name
+         * A NULL path is valid only for an actual NullName byte.
+         * Any other NULL result indicates truncated or malformed AML.
          */
-        if (ParserState->Aml == Start)
+        if ((Start >= AmlEnd) || (*Start != 0) || (ParserState->Aml != (Start + 1)))
         {
             /* Force AML pointer to end to prevent infinite loop */
             ParserState->Aml = ParserState->AmlEnd;
@@ -600,11 +626,17 @@ AcpiPsGetNextSimpleArg (
     UINT32                  Length;
     UINT16                  Opcode;
     UINT8                   *Aml = ParserState->Aml;
-    UINT32                  Remaining = (UINT32) ACPI_PTR_DIFF (ParserState->AmlEnd, Aml);
-    UINT64                  PartialValue;
+    UINT8                   *AmlEnd;
 
 
     ACPI_FUNCTION_TRACE_U32 (PsGetNextSimpleArg, ArgType);
+
+
+    AmlEnd = ParserState->AmlEnd;
+    if (AmlEnd > ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize))
+    {
+        AmlEnd = ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize);
+    }
 
 
     switch (ArgType)
@@ -614,16 +646,12 @@ AcpiPsGetNextSimpleArg (
         /* Get 1 byte from the AML stream */
 
         Opcode = AML_BYTE_OP;
-        if (Remaining >= 1)
+        if ((Aml + 1) > AmlEnd)
         {
-            Arg->Common.Value.Integer = (UINT64) *Aml;
-            Length = 1;
+            goto TruncatedArg;
         }
-        else
-        {
-            Arg->Common.Value.Integer = 0;
-            Length = 0;
-        }
+        Arg->Common.Value.Integer = (UINT64) *Aml;
+        Length = 1;
         break;
 
     case ARGP_WORDDATA:
@@ -631,23 +659,12 @@ AcpiPsGetNextSimpleArg (
         /* Get 2 bytes from the AML stream */
 
         Opcode = AML_WORD_OP;
-        if (Remaining >= 2)
+        if ((Aml + 2) > AmlEnd)
         {
-            ACPI_MOVE_16_TO_64 (&Arg->Common.Value.Integer, Aml);
-            Length = 2;
+            goto TruncatedArg;
         }
-        else
-        {
-            Arg->Common.Value.Integer = 0;
-            Length = 0;
-            if (Remaining > 0)
-            {
-                PartialValue = 0;
-                memcpy (&PartialValue, Aml, Remaining);
-                Arg->Common.Value.Integer = PartialValue;
-                Length = Remaining;
-            }
-        }
+        ACPI_MOVE_16_TO_64 (&Arg->Common.Value.Integer, Aml);
+        Length = 2;
         break;
 
     case ARGP_DWORDDATA:
@@ -655,23 +672,12 @@ AcpiPsGetNextSimpleArg (
         /* Get 4 bytes from the AML stream */
 
         Opcode = AML_DWORD_OP;
-        if (Remaining >= 4)
+        if ((Aml + 4) > AmlEnd)
         {
-            ACPI_MOVE_32_TO_64 (&Arg->Common.Value.Integer, Aml);
-            Length = 4;
+            goto TruncatedArg;
         }
-        else
-        {
-            Arg->Common.Value.Integer = 0;
-            Length = 0;
-            if (Remaining > 0)
-            {
-                PartialValue = 0;
-                memcpy (&PartialValue, Aml, Remaining);
-                Arg->Common.Value.Integer = PartialValue;
-                Length = Remaining;
-            }
-        }
+        ACPI_MOVE_32_TO_64 (&Arg->Common.Value.Integer, Aml);
+        Length = 4;
         break;
 
     case ARGP_QWORDDATA:
@@ -679,23 +685,12 @@ AcpiPsGetNextSimpleArg (
         /* Get 8 bytes from the AML stream */
 
         Opcode = AML_QWORD_OP;
-        if (Remaining >= 8)
+        if ((Aml + 8) > AmlEnd)
         {
-            ACPI_MOVE_64_TO_64 (&Arg->Common.Value.Integer, Aml);
-            Length = 8;
+            goto TruncatedArg;
         }
-        else
-        {
-            Arg->Common.Value.Integer = 0;
-            Length = 0;
-            if (Remaining > 0)
-            {
-                PartialValue = 0;
-                memcpy (&PartialValue, Aml, Remaining);
-                Arg->Common.Value.Integer = PartialValue;
-                Length = Remaining;
-            }
-        }
+        ACPI_MOVE_64_TO_64 (&Arg->Common.Value.Integer, Aml);
+        Length = 8;
         break;
 
     case ARGP_CHARLIST:
@@ -708,31 +703,20 @@ AcpiPsGetNextSimpleArg (
         /* Find the null terminator */
 
         Length = 0;
-        while ((Length < Remaining) && Aml[Length])
+        while ((Aml + Length) < AmlEnd)
         {
-            Length++;
-        }
-        if (Length < Remaining)
-        {
-            /* Account for the terminating null */
-            Length++;
-        }
-        else
-        {
-            /*
-             * No terminator found - add null at buffer boundary
-             * and report a warning
-             */
-            ACPI_WARNING ((AE_INFO,
-                "Invalid AML string: no null terminator, truncating at offset %u",
-                (UINT32) (Aml - ParserState->Aml)));
-
-            /* Add null terminator at the boundary */
-            if (Remaining > 0)
+            if (!Aml[Length])
             {
-                Aml[Remaining - 1] = 0;
-                Length = Remaining;
+                Length++;
+                break;
             }
+
+            Length++;
+        }
+
+        if ((Aml + Length) > AmlEnd)
+        {
+            goto TruncatedArg;
         }
         break;
 
@@ -751,6 +735,12 @@ AcpiPsGetNextSimpleArg (
 
     AcpiPsInitOp (Arg, Opcode);
     ParserState->Aml += Length;
+    return_VOID;
+
+TruncatedArg:
+    ParserState->Aml = ParserState->AmlEnd;
+    AcpiPsInitOp (Arg, Opcode);
+    Arg->Common.Value.Integer = 0;
     return_VOID;
 }
 
