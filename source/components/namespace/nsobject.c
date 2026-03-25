@@ -336,9 +336,17 @@ AcpiNsDetachObject (
 
     ObjDesc = Node->Object;
 
+    /*
+     * Validate the object descriptor type before accessing object contents.
+     * This prevents use-after-free when the object has been released to
+     * the cache and purged, but the namespace node still references it.
+     */
     if (!ObjDesc ||
+        (ACPI_GET_DESCRIPTOR_TYPE (ObjDesc) != ACPI_DESC_TYPE_OPERAND &&
+         ACPI_GET_DESCRIPTOR_TYPE (ObjDesc) != ACPI_DESC_TYPE_NAMED) ||
         (ObjDesc->Common.Type == ACPI_TYPE_LOCAL_DATA))
     {
+        Node->Object = NULL;
         return_VOID;
     }
 
