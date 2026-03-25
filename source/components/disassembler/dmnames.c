@@ -321,6 +321,7 @@ AcpiDmNamestring (
     char                    *Name)
 {
     UINT32                  SegCount;
+    UINT32                  ByteCount = 0;
 
 
     if (!Name)
@@ -330,13 +331,19 @@ AcpiDmNamestring (
 
     /* Handle all Scope Prefix operators */
 
-    while (ACPI_IS_ROOT_PREFIX (ACPI_GET8 (Name)) ||
-           ACPI_IS_PARENT_PREFIX (ACPI_GET8 (Name)))
+    while ((ACPI_IS_ROOT_PREFIX (ACPI_GET8 (Name)) ||
+           ACPI_IS_PARENT_PREFIX (ACPI_GET8 (Name))) &&
+           (ByteCount++ < 256))
     {
         /* Append prefix character */
 
         AcpiOsPrintf ("%1c", ACPI_GET8 (Name));
         Name++;
+    }
+
+    if (ByteCount >= 256)
+    {
+        return; /* Prevent runaway loop on malformed namestring */
     }
 
     switch (ACPI_GET8 (Name))
@@ -355,6 +362,11 @@ AcpiDmNamestring (
     case AML_MULTI_NAME_PREFIX:
 
         SegCount = (UINT32) ACPI_GET8 (Name + 1);
+        /* Limit segment count to prevent overflow on malformed namestrings */
+        if (SegCount > 255)
+        {
+            SegCount = 255;
+        }
         Name += 2;
         break;
 
@@ -379,6 +391,13 @@ AcpiDmNamestring (
         }
 
         Name += ACPI_NAMESEG_SIZE;
+        ByteCount += ACPI_NAMESEG_SIZE;
+
+        /* Prevent reading past reasonable namestring length */
+        if (ByteCount > 256)
+        {
+            break;
+        }
     }
 }
 
