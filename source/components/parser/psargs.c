@@ -293,10 +293,19 @@ AcpiPsGetNextNamestring (
 
     /* Point past any namestring prefix characters (backslash or carat) */
 
-    while (ACPI_IS_ROOT_PREFIX (*End) ||
-           ACPI_IS_PARENT_PREFIX (*End))
+    while ((End < ParserState->AmlEnd) &&
+           (ACPI_IS_ROOT_PREFIX (*End) ||
+            ACPI_IS_PARENT_PREFIX (*End)))
     {
         End++;
+    }
+
+    /* Check for buffer overflow before dereferencing */
+
+    if (End >= ParserState->AmlEnd)
+    {
+        ParserState->Aml = ParserState->AmlEnd;
+        return_PTR (NULL);
     }
 
     /* Decode the path prefix character */
@@ -324,6 +333,13 @@ AcpiPsGetNextNamestring (
     case AML_MULTI_NAME_PREFIX:
 
         /* Multiple name segments, 4 chars each, count in next byte */
+
+        /* Validate that we can safely read the count byte */
+        if ((End + 1) >= ParserState->AmlEnd)
+        {
+            ParserState->Aml = ParserState->AmlEnd;
+            return_PTR (NULL);
+        }
 
         End += 2 + (*(End + 1) * ACPI_NAMESEG_SIZE);
         break;
@@ -709,6 +725,13 @@ AcpiPsGetNextField (
     case AML_INT_NAMEDFIELD_OP:
 
         /* Get the 4-character name */
+
+        /* Validate that we can safely read a 4-byte name segment */
+        if ((ParserState->Aml + ACPI_NAMESEG_SIZE) > ParserState->AmlEnd)
+        {
+            AcpiPsFreeOp (Field);
+            return_PTR (NULL);
+        }
 
         ACPI_MOVE_32_TO_32 (&Name, ParserState->Aml);
         AcpiPsSetName (Field, Name);
