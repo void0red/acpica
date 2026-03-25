@@ -221,6 +221,13 @@ AcpiPsPeekOpcode (
 
 
     Aml = ParserState->Aml;
+
+    /* Check AML pointer is within bounds */
+    if (Aml >= ParserState->AmlEnd)
+    {
+        return (AML_EXTENDED_PREFIX); /* Return safe value to avoid further processing */
+    }
+
     Opcode = (UINT16) ACPI_GET8 (Aml);
 
     if (Opcode == AML_EXTENDED_PREFIX)
@@ -228,6 +235,10 @@ AcpiPsPeekOpcode (
         /* Extended opcode, get the second opcode byte */
 
         Aml++;
+        if (Aml >= ParserState->AmlEnd)
+        {
+            return (Opcode); /* Return partial opcode if buffer ends */
+        }
         Opcode = (UINT16) ((Opcode << 8) | ACPI_GET8 (Aml));
     }
 
