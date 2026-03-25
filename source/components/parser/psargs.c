@@ -599,9 +599,17 @@ AcpiPsGetNextSimpleArg (
     UINT32                  Length;
     UINT16                  Opcode;
     UINT8                   *Aml = ParserState->Aml;
+    UINT8                   *AmlEnd;
 
 
     ACPI_FUNCTION_TRACE_U32 (PsGetNextSimpleArg, ArgType);
+
+
+    AmlEnd = ParserState->AmlEnd;
+    if (AmlEnd > ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize))
+    {
+        AmlEnd = ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize);
+    }
 
 
     switch (ArgType)
@@ -611,6 +619,10 @@ AcpiPsGetNextSimpleArg (
         /* Get 1 byte from the AML stream */
 
         Opcode = AML_BYTE_OP;
+        if ((Aml + 1) > AmlEnd)
+        {
+            goto TruncatedArg;
+        }
         Arg->Common.Value.Integer = (UINT64) *Aml;
         Length = 1;
         break;
@@ -620,6 +632,10 @@ AcpiPsGetNextSimpleArg (
         /* Get 2 bytes from the AML stream */
 
         Opcode = AML_WORD_OP;
+        if ((Aml + 2) > AmlEnd)
+        {
+            goto TruncatedArg;
+        }
         ACPI_MOVE_16_TO_64 (&Arg->Common.Value.Integer, Aml);
         Length = 2;
         break;
@@ -629,6 +645,10 @@ AcpiPsGetNextSimpleArg (
         /* Get 4 bytes from the AML stream */
 
         Opcode = AML_DWORD_OP;
+        if ((Aml + 4) > AmlEnd)
+        {
+            goto TruncatedArg;
+        }
         ACPI_MOVE_32_TO_64 (&Arg->Common.Value.Integer, Aml);
         Length = 4;
         break;
@@ -638,6 +658,10 @@ AcpiPsGetNextSimpleArg (
         /* Get 8 bytes from the AML stream */
 
         Opcode = AML_QWORD_OP;
+        if ((Aml + 8) > AmlEnd)
+        {
+            goto TruncatedArg;
+        }
         ACPI_MOVE_64_TO_64 (&Arg->Common.Value.Integer, Aml);
         Length = 8;
         break;
@@ -652,11 +676,21 @@ AcpiPsGetNextSimpleArg (
         /* Find the null terminator */
 
         Length = 0;
-        while (Aml[Length])
+        while ((Aml + Length) < AmlEnd)
         {
+            if (!Aml[Length])
+            {
+                Length++;
+                break;
+            }
+
             Length++;
         }
-        Length++;
+
+        if ((Aml + Length) > AmlEnd)
+        {
+            goto TruncatedArg;
+        }
         break;
 
     case ARGP_NAME:
@@ -674,6 +708,12 @@ AcpiPsGetNextSimpleArg (
 
     AcpiPsInitOp (Arg, Opcode);
     ParserState->Aml += Length;
+    return_VOID;
+
+TruncatedArg:
+    ParserState->Aml = ParserState->AmlEnd;
+    AcpiPsInitOp (Arg, Opcode);
+    Arg->Common.Value.Integer = 0;
     return_VOID;
 }
 
