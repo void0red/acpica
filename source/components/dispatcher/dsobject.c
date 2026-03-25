@@ -612,7 +612,36 @@ AcpiDsInitObjectFromOp (
     case ACPI_TYPE_STRING:
 
         ObjDesc->String.Pointer = Op->Common.Value.String;
-        ObjDesc->String.Length = (UINT32) strlen (Op->Common.Value.String);
+
+        /*
+         * Validate string pointer is within AML buffer bounds
+         * to prevent heap-buffer-overflow
+         */
+        if (WalkState && WalkState->ParserState.AmlStart &&
+            WalkState->ParserState.AmlEnd)
+        {
+            UINT8 *StringPtr = (UINT8 *) Op->Common.Value.String;
+            UINT8 *AmlEnd = WalkState->ParserState.AmlEnd;
+            UINT32 MaxLength;
+            UINT32 i;
+
+            if (StringPtr >= AmlEnd)
+            {
+                return_ACPI_STATUS (AE_AML_BAD_OPCODE);
+            }
+
+            /* Limit string length to remaining AML buffer */
+            MaxLength = (UINT32) (AmlEnd - StringPtr);
+            for (i = 0; i < MaxLength && StringPtr[i] != 0; i++)
+            {
+                /* Scan for null terminator */
+            }
+            ObjDesc->String.Length = i;
+        }
+        else
+        {
+            ObjDesc->String.Length = (UINT32) strlen (Op->Common.Value.String);
+        }
 
         /*
          * The string is contained in the ACPI table, don't ever try
