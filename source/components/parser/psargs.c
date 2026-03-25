@@ -286,17 +286,38 @@ AcpiPsGetNextNamestring (
 {
     UINT8                   *Start = ParserState->Aml;
     UINT8                   *End = ParserState->Aml;
+    UINT8                   *AmlEnd;
 
 
     ACPI_FUNCTION_TRACE (PsGetNextNamestring);
 
 
+    /*
+     * ParserState->AmlEnd may be expanded by malformed package lengths.
+     * Never decode a namestring beyond the original AML buffer.
+     */
+    AmlEnd = ParserState->AmlEnd;
+    if (AmlEnd > ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize))
+    {
+        AmlEnd = ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize);
+    }
+
+
     /* Point past any namestring prefix characters (backslash or carat) */
 
-    while (ACPI_IS_ROOT_PREFIX (*End) ||
-           ACPI_IS_PARENT_PREFIX (*End))
+    while ((End < AmlEnd) &&
+           (ACPI_IS_ROOT_PREFIX (*End) ||
+            ACPI_IS_PARENT_PREFIX (*End)))
     {
         End++;
+    }
+
+    /* Check for buffer overflow before dereferencing */
+
+    if (End >= AmlEnd)
+    {
+        ParserState->Aml = ParserState->AmlEnd;
+        return_PTR (NULL);
     }
 
     /* Decode the path prefix character */
@@ -325,6 +346,12 @@ AcpiPsGetNextNamestring (
 
         /* Multiple name segments, 4 chars each, count in next byte */
 
+        if ((End + 1) >= AmlEnd)
+        {
+            ParserState->Aml = ParserState->AmlEnd;
+            return_PTR (NULL);
+        }
+
         End += 2 + (*(End + 1) * ACPI_NAMESEG_SIZE);
         break;
 
@@ -334,6 +361,14 @@ AcpiPsGetNextNamestring (
 
         End += ACPI_NAMESEG_SIZE;
         break;
+    }
+
+    /* Check for buffer overflow */
+
+    if (End > AmlEnd)
+    {
+        ParserState->Aml = ParserState->AmlEnd;
+        return_PTR (NULL);
     }
 
     ParserState->Aml = End;
@@ -375,9 +410,17 @@ AcpiPsGetNextNamepath (
     ACPI_OPERAND_OBJECT     *MethodDesc;
     ACPI_NAMESPACE_NODE     *Node;
     UINT8                   *Start = ParserState->Aml;
+    UINT8                   *AmlEnd;
 
 
     ACPI_FUNCTION_TRACE (PsGetNextNamepath);
+
+
+    AmlEnd = ParserState->AmlEnd;
+    if (AmlEnd > ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize))
+    {
+        AmlEnd = ACPI_ADD_PTR (UINT8, ParserState->AmlStart, ParserState->AmlSize);
+    }
 
 
     Path = AcpiPsGetNextNamestring (ParserState);
@@ -387,6 +430,17 @@ AcpiPsGetNextNamepath (
 
     if (!Path)
     {
+        /*
+         * A NULL path is valid only for an actual NullName byte.
+         * Any other NULL result indicates truncated or malformed AML.
+         */
+        if ((Start >= AmlEnd) || (*Start != 0) || (ParserState->Aml != (Start + 1)))
+        {
+            /* Force AML pointer to end to prevent infinite loop */
+            ParserState->Aml = ParserState->AmlEnd;
+            return_ACPI_STATUS (AE_AML_BUFFER_LIMIT);
+        }
+
         Arg->Common.Value.Name = Path;
         return_ACPI_STATUS (AE_OK);
     }
